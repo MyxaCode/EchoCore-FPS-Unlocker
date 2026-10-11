@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#define RFU_VERSION "1.0.0"
+#define RFU_VERSION "1.0.1"
 #define RFU_GITHUB_REPO "MyxaCode/EchoCore-FPS-Unlocker"
 
 namespace RFU

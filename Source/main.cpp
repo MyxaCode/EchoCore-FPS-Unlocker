@@ -128,11 +128,12 @@ std::filesystem::path GetLocalAppDataPath();
 
 bool IsEchoCoreProcess(DWORD pid)
 {
-	auto modules = ProcUtil::GetProcessModules(pid, 1);
-	if (modules.empty()) return false;
-	auto path = modules[0].path.lexically_normal().wstring();
-	auto root = (GetLocalAppDataPath() / "EchoCore").lexically_normal().wstring() + L"\\";
-	return path.size() > root.size() && _wcsnicmp(path.c_str(), root.c_str(), root.size()) == 0;
+	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+	if (!process) return false;
+	BOOL wow64 = FALSE;
+	bool result = IsWow64Process(process, &wow64) && wow64;
+	CloseHandle(process);
+	return result;
 }
 
 std::vector<RobloxProcessHandle> GetRobloxProcesses(bool open_all, bool include_client, bool include_studio)
@@ -502,6 +503,17 @@ class RobloxInstance
 			double difference = *(double *)(buffer + i) - frame_delay;
 			difference = difference < 0 ? -difference : difference;
 			if (difference < std::numeric_limits<double>::epsilon()) return search_offset + i;
+		}
+
+		std::vector<double> known_delays = { 1.0 / 10000.0 };
+		for (double cap : Settings::FPSCapValues)
+			if (cap > 0.0) known_delays.push_back(1.0 / cap);
+
+		for (int i = 0; i < sizeof(buffer) - sizeof(double); i += 4)
+		{
+			double value = *(double *)(buffer + i);
+			for (double delay : known_delays)
+				if (value == delay) return search_offset + i;
 		}
 
 		return -1;
