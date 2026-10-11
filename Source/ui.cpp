@@ -72,8 +72,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			AppendMenu(popup, MF_STRING | MF_GRAYED, RFU_TRAYMENU_APC, buffer);
 			AppendMenu(popup, MF_SEPARATOR, 0, NULL);
 
-			AppendMenu(popup, MF_STRING | (Settings::UnlockClient ? MF_CHECKED : 0), RFU_TRAYMENU_CLIENT, "Unlock Roblox Player");
-			AppendMenu(popup, MF_STRING | (Settings::UnlockStudio ? MF_CHECKED : 0), RFU_TRAYMENU_STUDIO, "Unlock Roblox Studio");
+			AppendMenu(popup, MF_STRING | (Settings::UnlockClient ? MF_CHECKED : 0), RFU_TRAYMENU_CLIENT, "Unlock EchoCore Player");
+			AppendMenu(popup, MF_STRING | (Settings::UnlockStudio ? MF_CHECKED : 0), RFU_TRAYMENU_STUDIO, "Unlock EchoCore Studio");
 
 			HMENU submenu = CreatePopupMenu();
 			AppendMenu(submenu, MF_STRING, RFU_FCS_NONE, "None");
@@ -92,12 +92,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			CheckMenuRadioItem(submenu, RFU_FCS_FIRST, RFU_FCS_FIRST + Settings::FPSCapValues.size(), RFU_FCS_FIRST + Settings::FPSCapSelection, MF_BYCOMMAND);
 			AppendMenu(popup, MF_POPUP, (UINT_PTR)submenu, "FPS Cap");
 
-			HMENU unlock_method = CreatePopupMenu();
-			AppendMenu(unlock_method, MF_STRING, RFU_TRAYMENU_UM_HYBRID, "Hybrid");
-			//AppendMenu(unlock_method, MF_STRING, RFU_TRAYMENU_UM_MEMWRITE, "Memory Write");
-			AppendMenu(unlock_method, MF_STRING, RFU_TRAYMENU_UM_FLAGSFILE, "Flags File");
-			CheckMenuRadioItem(unlock_method, RFU_TRAYMENU_UM, RFU_TRAYMENU_UM_LAST, RFU_TRAYMENU_UM + static_cast<uint32_t>(Settings::UnlockMethod), MF_BYCOMMAND);
-			AppendMenu(popup, MF_POPUP, (UINT_PTR)unlock_method, "Unlock Method");
 
 			AppendMenu(popup, MF_STRING | (Settings::AltEnterFix ? MF_CHECKED : 0), RFU_TRAYMENU_ALTENTERFIX, "Alt-Enter Fix");
 
@@ -258,9 +252,9 @@ void UI::CreateHiddenConsole()
 	}
 
 #ifdef _WIN64
-	SetConsoleTitleA("Roblox FPS Unlocker " RFU_VERSION " (64-bit) Console");
+	SetConsoleTitleA("EchoCore FPS Unlocker " RFU_VERSION " (64-bit) Console");
 #else
-	SetConsoleTitleA("Roblox FPS Unlocker " RFU_VERSION " (32-bit) Console");
+	SetConsoleTitleA("EchoCore FPS Unlocker " RFU_VERSION " (32-bit) Console");
 #endif
 
 	SetConsoleVisible(false);
@@ -295,7 +289,7 @@ int UI::Start(HINSTANCE instance, LPTHREAD_START_ROUTINE watchthread)
 
 	RegisterClassEx(&wcex);
 
-	UI::Window = CreateWindow("RFUClass", "Roblox FPS Unlocker", 0, 0, 0, 0, 0, NULL, NULL, instance, NULL);
+	UI::Window = CreateWindow("RFUClass", "EchoCore FPS Unlocker", 0, 0, 0, 0, 0, NULL, NULL, instance, NULL);
 	if (!UI::Window)
 		return 0;
 
@@ -305,7 +299,7 @@ int UI::Start(HINSTANCE instance, LPTHREAD_START_ROUTINE watchthread)
 	NotifyIconData.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
 	NotifyIconData.uCallbackMessage = RFU_TRAYICON;
 	NotifyIconData.hIcon = LoadIcon(instance, MAKEINTRESOURCE(IDI_ICON1));
-	strcpy_s(NotifyIconData.szTip, "Roblox FPS Unlocker");
+	strcpy_s(NotifyIconData.szTip, "EchoCore FPS Unlocker");
 
 	Shell_NotifyIcon(NIM_ADD, &NotifyIconData);
 

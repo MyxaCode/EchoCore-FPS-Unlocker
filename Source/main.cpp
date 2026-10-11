@@ -124,17 +124,29 @@ struct RobloxProcessHandle
 	}
 };
 
+std::filesystem::path GetLocalAppDataPath();
+
+bool IsEchoCoreProcess(DWORD pid)
+{
+	auto modules = ProcUtil::GetProcessModules(pid, 1);
+	if (modules.empty()) return false;
+	auto path = modules[0].path.lexically_normal().wstring();
+	auto root = (GetLocalAppDataPath() / "EchoCore").lexically_normal().wstring() + L"\\";
+	return path.size() > root.size() && _wcsnicmp(path.c_str(), root.c_str(), root.size()) == 0;
+}
+
 std::vector<RobloxProcessHandle> GetRobloxProcesses(bool open_all, bool include_client, bool include_studio)
 {
 	std::vector<RobloxProcessHandle> result;
 	if (include_client)
 	{
-		for (auto pid : ProcUtil::GetProcessIdsByImageName("RobloxPlayerBeta.exe")) result.emplace_back(pid, RobloxHandleType::Client, open_all);
-		for (auto pid : ProcUtil::GetProcessIdsByImageName("Windows10Universal.exe")) result.emplace_back(pid, RobloxHandleType::UWP, open_all);
+		for (auto pid : ProcUtil::GetProcessIdsByImageName("RobloxPlayerBeta.exe"))
+			if (IsEchoCoreProcess(pid)) result.emplace_back(pid, RobloxHandleType::Client, open_all);
 	}
 	if (include_studio)
 	{
-		for (auto pid : ProcUtil::GetProcessIdsByImageName("RobloxStudioBeta.exe")) result.emplace_back(pid, RobloxHandleType::Studio, open_all);
+		for (auto pid : ProcUtil::GetProcessIdsByImageName("RobloxStudioBeta.exe"))
+			if (IsEchoCoreProcess(pid)) result.emplace_back(pid, RobloxHandleType::Studio, open_all);
 	}
 	return result;
 }
@@ -223,7 +235,7 @@ bool RobloxFFlags::apply(bool prompt)
 	{
 		if (!write_disk())
 		{
-			NotifyError("rbxfpsunlocker Error", "Failed to write ClientAppSettings.json! Try running Roblox FPS Unlocker as administrator or using a different unlock method.");
+			NotifyError("EchoCore FPS Unlocker", "Failed to write ClientAppSettings.json! Try running EchoCore FPS Unlocker as administrator or using a different unlock method.");
 			return false;
 		}
 
@@ -412,7 +424,59 @@ class RobloxInstance
 			}
 			else
 			{
-				// 32-bit clients aren't supported
+				// 55 8B EC 83 E4 F8 83 EC 08 E8 ?? ?? ?? ?? 8D 0C 24
+				if (auto result = (const uint8_t *)ProcUtil::ScanProcess(handle, "\x55\x8B\xEC\x83\xE4\xF8\x83\xEC\x08\xE8\xDE\xAD\xBE\xEF\x8D\x0C\x24", "xxxxxxxxxx????xxx", start, end))
+				{
+					auto gts_fn = result + 14 + ProcUtil::Read<int32_t>(handle, result + 10);
+
+					printf("[%u] GetTaskScheduler (sig ltcg): %p\n", process.id, gts_fn);
+
+					uint8_t buffer[0x100];
+					if (ProcUtil::Read(handle, gts_fn, buffer, sizeof(buffer)))
+					{
+						if (auto inst = sigscan::scan("\xA1\x00\x00\x00\x00\x8B\x4D\xF4", "x????xxx", (uintptr_t)buffer, (uintptr_t)buffer + 0x100)) // mov eax, <TaskSchedulerPtr>; mov ecx, [ebp-0Ch])
+						{
+							//printf("[%p] Inst: %p\n", process, gts_fn + (inst - buffer));
+							ts_ptr_candidates = { (const void *)(*(uint32_t *)(inst + 1)) };
+							return true;
+						}
+					}
+				}
+				// 55 8B EC 83 EC 10 56 E8 ?? ?? ?? ?? 8B F0 8D 45 F0
+				else if (auto result = (const uint8_t *)ProcUtil::ScanProcess(handle, "\x55\x8B\xEC\x83\xEC\x10\x56\xE8\x00\x00\x00\x00\x8B\xF0\x8D\x45\xF0", "xxxxxxxx????xxxxx", start, end))
+				{
+					auto gts_fn = result + 12 + ProcUtil::Read<int32_t>(handle, result + 8);
+
+					printf("[%u] GetTaskScheduler (sig non-ltcg): %p\n", process.id, gts_fn);
+
+					uint8_t buffer[0x100];
+					if (ProcUtil::Read(handle, gts_fn, buffer, sizeof(buffer)))
+					{
+						if (auto inst = sigscan::scan("\xA1\x00\x00\x00\x00\x8B\x4D\xF4", "x????xxx", (uintptr_t)buffer, (uintptr_t)buffer + 0x100)) // mov eax, <TaskSchedulerPtr>; mov ecx, [ebp-0Ch])
+						{
+							//printf("[%p] Inst: %p\n", process, gts_fn + (inst - buffer));
+							ts_ptr_candidates = { (const void *)(*(uint32_t *)(inst + 1)) };
+							return true;
+						}
+					}
+				}
+				// 55 8B EC 53 56 57 8B F9 E8 ?? ?? ?? ?? 8B D8
+				else if (auto result = (const uint8_t *)ProcUtil::ScanProcess(handle, "\x55\x8B\xEC\x53\x56\x57\x8B\xF9\xE8\x00\x00\x00\x00\x8B\xD8", "xxxxxxxxx????xx", start, end))
+				{
+					auto gts_fn = result + 13 + ProcUtil::Read<int32_t>(handle, result + 9);
+
+					printf("[%u] GetTaskScheduler (sig uwp): %p\n", process.id, gts_fn);
+
+					uint8_t buffer[0x100];
+					if (ProcUtil::Read(handle, gts_fn, buffer, sizeof(buffer)))
+					{
+						if (auto inst = sigscan::scan("\x50\xA1\x00\x00\x00\x00\x8B\x4D\xF4", "xx????xxx", (uintptr_t)buffer, (uintptr_t)buffer + 0x100)) // mov eax, <TaskSchedulerPtr>; mov ecx, [ebp-0Ch])
+						{
+							ts_ptr_candidates = { (const void *)(*(uint32_t *)(inst + 2)) };
+							return true;
+						}
+					}
+				}
 			}
 		}
 		catch (ProcUtil::WindowsException &e)
@@ -445,7 +509,7 @@ class RobloxInstance
 
 	bool ShouldUseFlagsFile() const
 	{
-		return Settings::UnlockMethod == Settings::UnlockMethodType::FlagsFile || (Settings::UnlockMethod == Settings::UnlockMethodType::Hybrid && IsLikelyAntiCheatProtected());
+		return false;
 	}
 
 public:
@@ -521,7 +585,7 @@ public:
 		{
 			if (!BlockingLoadModuleInfo())
 			{
-				NotifyError("rbxfpsunlocker Error", "Failed to get process base! Restart Roblox FPS Unlocker or, if you are on a 64-bit operating system, make sure you are using the 64-bit version of Roblox FPS Unlocker.");
+				NotifyError("EchoCore FPS Unlocker", "Failed to get process base! Restart EchoCore FPS Unlocker or, if you are on a 64-bit operating system, make sure you are using the right build of EchoCore FPS Unlocker.");
 				retries_left = -1;
 				return;
 			}
@@ -546,7 +610,7 @@ public:
 			if (ts_ptr_candidates.empty())
 			{
 				if (retries_left-- <= 0)
-					NotifyError("rbxfpsunlocker Error", "Unable to find TaskScheduler! This is probably due to a Roblox update-- watch the github for any patches or a fix.");
+					NotifyError("EchoCore FPS Unlocker", "Unable to find TaskScheduler! Make sure you are in a game and try again.");
 				return;
 			}
 			else
@@ -593,14 +657,14 @@ public:
 				{
 					// one or more candidates had valid pointers with no frame delay variable
 					if (retries_left-- <= 0)
-						NotifyError("rbxfpsunlocker Error", "Variable scan failed! Make sure your framerate is at ~60.0 FPS (press Shift+F5 in-game) before using Roblox FPS Unlocker.");
+						NotifyError("EchoCore FPS Unlocker", "Variable scan failed! Make sure your framerate is at ~60.0 FPS (press Shift+F5 in-game) before using EchoCore FPS Unlocker.");
 				}
 			}
 			catch (ProcUtil::WindowsException& e)
 			{
 				printf("[%u] RobloxProcess::Tick failed: %s (%d)\n", process.id, e.what(), e.GetLastError());
 				if (retries_left-- <= 0)
-					NotifyError("rbxfpsunlocker Error", "An exception occurred while performing the variable scan.");
+					NotifyError("EchoCore FPS Unlocker", "An exception occurred while performing the variable scan.");
 			}
 		}
 	}
@@ -676,6 +740,7 @@ public:
 
 std::filesystem::path GetCurrentClientVersionPath()
 {
+	return {};
 	HKEY key;
 	if (RegOpenKeyEx(HKEY_CURRENT_USER, "SOFTWARE\\ROBLOX Corporation\\Environments\\roblox-player", NULL, KEY_READ, &key) == ERROR_SUCCESS)
 	{
@@ -691,6 +756,7 @@ std::filesystem::path GetCurrentClientVersionPath()
 
 std::filesystem::path GetCurrentStudioVersionPath()
 {
+	return {};
 	HKEY key;
 	if (RegOpenKeyEx(HKEY_CURRENT_USER, "SOFTWARE\\ROBLOX Corporation\\Environments\\roblox-studio", NULL, KEY_READ, &key) == ERROR_SUCCESS)
 	{
@@ -918,7 +984,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 	{
 		if (CheckRunning())
 		{
-			MessageBoxA(NULL, "Roblox FPS Unlocker is already running", "Error", MB_OK);
+			MessageBoxA(NULL, "EchoCore FPS Unlocker is already running", "Error", MB_OK);
 		}
 		else
 		{
