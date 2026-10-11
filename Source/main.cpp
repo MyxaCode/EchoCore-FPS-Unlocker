@@ -26,6 +26,7 @@
 #define	ROBLOX_WRITE_ACCESS (PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE)
 
 HANDLE SingletonMutex;
+bool AccessDenied = false;
 
 enum class RobloxHandleType
 {
@@ -85,6 +86,7 @@ struct RobloxProcessHandle
 			shared_handle = std::make_shared<ProcUtil::ScopedHandle>(handle);
 			return true;
 		}
+		AccessDenied = GetLastError() == ERROR_ACCESS_DENIED;
 		return false;
 	}
 
@@ -597,7 +599,10 @@ public:
 		{
 			if (!BlockingLoadModuleInfo())
 			{
-				NotifyError("EchoCore FPS Unlocker", "Failed to get process base! Restart EchoCore FPS Unlocker or, if you are on a 64-bit operating system, make sure you are using the right build of EchoCore FPS Unlocker.");
+				if (AccessDenied)
+					NotifyError("EchoCore FPS Unlocker", "EchoCore is running with administrator rights, so the unlocker can't reach it. Download the latest EchoCore Bootstrapper from echocr.xyz/download and launch the game again, or start EchoCore FPS Unlocker from its folder instead of from the browser.");
+				else
+					NotifyError("EchoCore FPS Unlocker", "Failed to get process base! Restart EchoCore FPS Unlocker or, if you are on a 64-bit operating system, make sure you are using the right build of EchoCore FPS Unlocker.");
 				retries_left = -1;
 				return;
 			}
